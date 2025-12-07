@@ -8,8 +8,9 @@ export function bypassRLS() {
   return Prisma.defineExtension((prisma) => prisma.$extends({
     query: {
       $allModels: {
-        async $allOperations({ args, model, operation, query }) {
+        async $allOperations({ args, query }) {
           const [, result] = await prisma.$transaction([
+            prisma.$executeRaw`SELECT set_config('app.current_tenant_id', '-1'::text, TRUE)`,
             prisma.$executeRaw`SELECT set_config('app.bypass_rls', 'on'::text, TRUE)`,
             query(args),
           ])
@@ -24,12 +25,13 @@ export function forTenant(tenantId: number) {
   return Prisma.defineExtension((prisma) => prisma.$extends({
     query: {
       $allModels: {
-        async $allOperations({ args, model, operation, query }) {
+        async $allOperations({ args, query }) {
           const [, result] = await prisma.$transaction([
+            prisma.$executeRaw`SELECT set_config('app.bypass_rls', 'off'::text, TRUE)`,
             prisma.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantId}::text, TRUE)`,
             query(args),
           ])
-          console.log("Current tenant id: ", tenantId)
+          console.info("Current tenant id: ", tenantId)
           return result
         },
       },
@@ -39,5 +41,13 @@ export function forTenant(tenantId: number) {
 
 const adapter = new PrismaPg({ connectionString })
 const prisma = new PrismaClient({ adapter,errorFormat: 'pretty' })
+
+export function prismaBypassRLS(prisma: PrismaClient) {
+  return prisma.$extends(bypassRLS())
+}
+
+export function prismaWithTenant(tenantId: number) {
+  return prisma.$extends(forTenant(tenantId))
+}
 
 export { prisma }
